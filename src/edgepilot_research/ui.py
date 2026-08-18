@@ -35,6 +35,8 @@ JOB_ID = re.compile(r"^[A-Za-z0-9_-]{20,80}$")
 ANSI_ESCAPE = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b[@-Z\\-_]")
 MAX_BODY = 16 * 1024
 MAX_JSON_FILE = 8 * 1024 * 1024
+MAX_TIMESERIES_JSON_FILE = 64 * 1024 * 1024
+MAX_TIMESERIES_POINTS = 2_000
 JOBS: dict[str, dict[str, Any]] = {}
 JOBS_LOCK = Lock()
 LOGGER = logging.getLogger("edgepilot_research.ui")
@@ -277,6 +279,10 @@ def _strategy_record(directory: Path, locale: str) -> dict[str, Any]:
     translations = manifest.get("translations")
     if locale != "en" and isinstance(translations, dict) and isinstance(translations.get(locale), dict):
         translated = translations[locale]
+    capacity = manifest.get("capacity") if isinstance(manifest.get("capacity"), dict) else {}
+    markets = manifest.get("markets") if isinstance(manifest.get("markets"), dict) else {}
+    assets = markets.get("assets") if isinstance(markets.get("assets"), list) else []
+    risk_profile = manifest.get("risk_profile")
     record = {
         "slug": slug,
         "version": version,
@@ -287,6 +293,9 @@ def _strategy_record(directory: Path, locale: str) -> dict[str, Any]:
         "presets": presets,
         "benchmark_preset": benchmark_preset,
         "package_sha256": install_record.get("package_sha256"),
+        "risk_profile": risk_profile if risk_profile in {"conservative", "balanced", "aggressive"} else None,
+        "capacity_usd": capacity.get("usd") if isinstance(capacity.get("usd"), (int, float)) else None,
+        "assets": [value for value in assets if isinstance(value, str) and value][:20],
     }
     recent = run_records(slug)["runs"]
     record["recent_run"] = recent[0] if recent else None
@@ -352,6 +361,25 @@ def run_records(slug: str = "") -> dict[str, Any]:
     return {"runs": records, "diagnostics": diagnostics}
 
 
+def _downsample_timeseries(points: list[dict[str, Any]], maximum: int = MAX_TIMESERIES_POINTS) -> list[dict[str, Any]]:
+    """Keep a deterministic overview while preserving endpoints and global extrema."""
+    if len(points) <= maximum:
+        return points
+    required = {0, len(points) - 1}
+    for field in ("equity", "drawdown_pct"):
+        numeric = [(index, point.get(field)) for index, point in enumerate(points) if isinstance(point.get(field), (int, float))]
+        if numeric:
+            required.add(min(numeric, key=lambda item: item[1])[0])
+            required.add(max(numeric, key=lambda item: item[1])[0])
+    remaining = maximum - len(required)
+    if remaining > 0:
+        span = len(points) - 1
+        required.update(round(index * span / (remaining + 1)) for index in range(1, remaining + 1))
+    if len(required) < maximum:
+        required.update(index for index in range(len(points)) if index not in required and len(required) < maximum)
+    return [points[index] for index in sorted(required)[:maximum]]
+
+
 def run_detail(run_id: str) -> dict[str, Any]:
     if not RUN_ID.fullmatch(run_id):
         raise ValueError("invalid run id")
@@ -362,13 +390,17 @@ def run_detail(run_id: str) -> dict[str, Any]:
     if not isinstance(record, dict):
         raise ValueError("run record must be an object")
     allowed = {key: record.get(key) for key in ("run_id", "mode", "strategy", "markets", "venues", "period", "metrics", "provenance")}
-    timeseries: list[Any] = []
+    timeseries: list[dict[str, Any]] = []
+    timeseries_meta = {"original_points": 0, "returned_points": 0, "downsampled": False}
     timeseries_path = root / "timeseries.json"
-    if timeseries_path.is_file() and timeseries_path.stat().st_size <= MAX_JSON_FILE:
-        raw = _read_json(timeseries_path, maximum=MAX_JSON_FILE)
+    if timeseries_path.is_file():
+        raw = _read_json(timeseries_path, maximum=MAX_TIMESERIES_JSON_FILE)
         if isinstance(raw, list):
-            timeseries = [{key: point.get(key) for key in ("timestamp", "equity", "drawdown_pct")} for point in raw if isinstance(point, dict)]
+            normalized = [{key: point.get(key) for key in ("timestamp", "equity", "drawdown_pct")} for point in raw if isinstance(point, dict)]
+            timeseries = _downsample_timeseries(normalized)
+            timeseries_meta = {"original_points": len(normalized), "returned_points": len(timeseries), "downsampled": len(timeseries) < len(normalized)}
     allowed["timeseries"] = timeseries
+    allowed["timeseries_meta"] = timeseries_meta
     strategy = allowed.get("strategy") if isinstance(allowed.get("strategy"), dict) else {}
     internal_name = strategy.get("name")
     preset = strategy.get("preset")
@@ -399,6 +431,9 @@ def _safe_runtime() -> dict[str, Any]:
         root = Path(str(status["home"]))
         result["python_executable"] = str(Path(sys.executable).absolute())
         result["process_current"] = Path(sys.prefix).resolve() == (root / str(status["active_release"]) / ".venv").resolve()
+    else:
+        result["install_command"] = "py -3 skills\\edgepilot-research\\scripts\\install_runtime.py" if os.name == "nt" else "python3 skills/edgepilot-research/scripts/install_runtime.py"
+        result["assistant_prompt"] = "Install the EdgePilot Research runtime and verify it, then reopen this Dashboard."
     return result
 
 

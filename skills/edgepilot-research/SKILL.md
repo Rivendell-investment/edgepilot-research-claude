@@ -103,11 +103,11 @@ Access the public Research catalog over HTTPS whenever current catalog data is n
 When the user asks to open or use the Research Dashboard, outbound network permission is a startup requirement, not a retry optimization. First verify the anonymous catalog using the environment's network permission, then start the generated launcher as a long-running process with that same permission:
 
 ```bash
-~/.edgepilot-research/bin/edgepilot-research ui --host 127.0.0.1 --port 8766
+~/.edgepilot-research/bin/edgepilot-research ui --host 127.0.0.1 --port 8686
 ```
 
 ```bat
-%APPDATA%\EdgePilotResearch\bin\edgepilot-research.cmd ui --host 127.0.0.1 --port 8766
+%APPDATA%\EdgePilotResearch\bin\edgepilot-research.cmd ui --host 127.0.0.1 --port 8686
 ```
 
 Do not start the Dashboard with host Python, in an ordinary network-restricted subprocess, or from a cached page of a stopped backend. Keep the process session alive while the user uses the Dashboard and verify that `/api/health` matches the local `dashboard.json` instance, active release, runtime ID, Python executable, and plugin digest before opening it in any browser. The Dashboard performs its own catalog preflight before binding the port; if it exits with `DNS_FAILED`, `CONNECT_TIMEOUT`, or `REMOTE_CONNECTION_FAILED`, obtain the required network permission and restart it instead of bypassing the preflight. Browser choice does not change this requirement because strategy installation is performed by the local Dashboard backend.

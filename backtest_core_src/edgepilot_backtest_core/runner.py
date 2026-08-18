@@ -4,6 +4,7 @@ from datetime import datetime
 from decimal import Decimal
 import json
 from pathlib import Path
+import os
 import shutil
 from typing import Any, Callable
 
@@ -148,8 +149,14 @@ def _prepare_fee_override_catalog(
 
     for child in src_data.iterdir():
         dest = dst_data / child.name
-        if child.name in _READ_ONLY_DATA_KINDS:
+        if child.name in _READ_ONLY_DATA_KINDS and os.name != "nt":
             dest.symlink_to(child.resolve())
+            continue
+        if child.name in _READ_ONLY_DATA_KINDS:
+            if child.is_dir():
+                shutil.copytree(child, dest, symlinks=False)
+            else:
+                shutil.copy2(child, dest, follow_symlinks=True)
             continue
         _copy_writable_data_kind(child, dest, instrument_ids)
 

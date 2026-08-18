@@ -673,6 +673,12 @@ def _write_pth(python: Path, app: Path) -> None:
     Path(site, "edgepilot_research_app.pth").write_text(relative + "\n", encoding="utf-8")
 
 
+def _windows_launcher_content(host: str) -> str:
+    if any(ch in host for ch in '"\r\n'):
+        raise ValueError("host Python path cannot be written into a cmd launcher")
+    return f'@echo off\r\n"{host}" "%~dp0edgepilot-research" %*\r\n'
+
+
 def _write_launcher(root: Path) -> None:
     bin_dir = root / "bin"
     bin_dir.mkdir(exist_ok=True)
@@ -699,9 +705,7 @@ os.execv(str(python), argv)
     launcher.chmod(0o755)
     if os.name == "nt":
         host = str(Path(sys.executable).resolve())
-        if any(ch in host for ch in '"\r\n'):
-            raise ValueError("host Python path cannot be written into a cmd launcher")
-        _atomic_text(bin_dir / "edgepilot-research.cmd", f'@echo off\r\n"{host}" "%~dp0edgepilot-research" %*\r\n')
+        _atomic_text(bin_dir / "edgepilot-research.cmd", _windows_launcher_content(host))
 
 
 def launch(argv: list[str] | None = None, *, home: Path | None = None) -> int:

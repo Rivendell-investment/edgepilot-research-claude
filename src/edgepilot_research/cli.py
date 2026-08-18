@@ -23,7 +23,7 @@ def parser() -> argparse.ArgumentParser:
     runs = commands.add_parser("runs"); runs.add_argument("action", choices=["list", "show"], nargs="?", default="list"); runs.add_argument("run_id", nargs="?")
     data = commands.add_parser("data"); data.add_argument("action", choices=["import"]); data.add_argument("--strategy", required=True); data.add_argument("--version", required=True); data.add_argument("--market", required=True, type=int); data.add_argument("--csv", required=True, type=Path); data.add_argument("--instrument-json", required=True, type=Path)
     runtime = commands.add_parser("runtime"); runtime.add_argument("action", choices=["status", "repair", "uninstall"]); runtime.add_argument("--break-install-lock", action="store_true"); runtime.add_argument("--yes", action="store_true")
-    ui = commands.add_parser("ui"); ui.add_argument("--host", default="127.0.0.1"); ui.add_argument("--port", type=int, default=8766); ui.add_argument("--stop", action="store_true")
+    ui = commands.add_parser("ui"); ui.add_argument("--host", default="127.0.0.1"); ui.add_argument("--port", type=int, default=8686); ui.add_argument("--stop", action="store_true")
     return root
 
 
